@@ -179,8 +179,6 @@ ErrorState_t TIM_vStop(TIM_Num_t Copy_eTimer);
  * TIM_PWMConfig_t myPWM = {TIM_TIMER3, TIM_CHANNEL1, TIM_PWM_MODE1, 500, 1000, 16-1, TIM_POLARITY_HIGH};
  * TIM_vPWM_Init(&myPWM);
  */
- * TIM_vPWM_Init(&myPWM);
- */
 ErrorState_t TIM_vPWM_Init(const TIM_PWMConfig_t *pxPWMConfig);
 
 /**

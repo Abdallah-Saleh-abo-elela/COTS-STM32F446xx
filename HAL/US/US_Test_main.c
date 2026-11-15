@@ -41,10 +41,15 @@
 /*_______________________________________________________________________________*/
 
 /**
- * @brief Select timer for testing. 
- * Options: TIM_TIMER1, TIM_TIMER2, TIM_TIMER3, TIM_TIMER4, TIM_TIMER5, TIM_TIMER8
+ * @brief Select ICU timer & channel for Ultrasonic ECHO (PA1 -> TIM2_CH2).
+ *        Delay uses Basic Timer TIM_TIMER7 to avoid conflicting with:
+ *          - TIM_TIMER2 (US ICU)
+ *          - TIM_TIMER5 (CLCDT driver)
+ *          - TIM_TIMER6 (MPU9250 delay driver)
  */
-#define TEST_TIMER       TIM_TIMER1 
+#define US_ICU_TIMER     TIM_TIMER2
+#define US_ECHO_CHANNEL  TIM_CHANNEL2
+#define US_DELAY_TIMER   TIM_TIMER7
 
 /* Pin Definitions */
 #define US_TRIG_PORT     GPIO_PORTA
@@ -64,35 +69,36 @@
 /*_______________________________________________________________________________*/
 
 /**
- * @brief Enable the RCC clock for the selected timer and GPIO ports.
+ * @brief Enable the RCC clock for a given timer using the MCAL RCC driver.
+ */
+static void App_vEnableTimerClock(TIM_Num_t Copy_eTimer)
+{
+    switch (Copy_eTimer)
+    {
+        case TIM_TIMER2: RCC_enumABPPerSts(RCC_APB1, RCC_TIM2EN, RCC_PER_ON); break;
+        case TIM_TIMER3: RCC_enumABPPerSts(RCC_APB1, RCC_TIM3EN, RCC_PER_ON); break;
+        case TIM_TIMER4: RCC_enumABPPerSts(RCC_APB1, RCC_TIM4EN, RCC_PER_ON); break;
+        case TIM_TIMER5: RCC_enumABPPerSts(RCC_APB1, RCC_TIM5EN, RCC_PER_ON); break;
+        case TIM_TIMER6: RCC_enumABPPerSts(RCC_APB1, RCC_TIM6EN, RCC_PER_ON); break;
+        case TIM_TIMER7: RCC_enumABPPerSts(RCC_APB1, RCC_TIM7EN, RCC_PER_ON); break;
+        case TIM_TIMER1: RCC_enumABPPerSts(RCC_APB2, RCC_TIM1EN, RCC_PER_ON); break;
+        case TIM_TIMER8: RCC_enumABPPerSts(RCC_APB2, RCC_TIM8EN, RCC_PER_ON); break;
+        default: break;
+    }
+}
+
+/**
+ * @brief Enable the RCC clock for the selected timers and GPIO ports.
  */
 static void App_vEnableClocks(void)
 {
-    /* Enable GPIOA clock (AHB1 — bit 0) */
-    SET_BIT(MRCC->AHP1ENR, 0);
+    /* Enable GPIOA and GPIOB clocks via MCAL RCC driver */
+    RCC_enumAHPPerSts(RCC_AHB1, RCC_GPIOAEN, RCC_PER_ON);
+    RCC_enumAHPPerSts(RCC_AHB1, RCC_GPIOBEN, RCC_PER_ON);
 
-    /* Enable GPIOB clock (AHB1 — bit 1) */
-    SET_BIT(MRCC->AHP1ENR, 1);
-
-    /* Enable Timer clock based on selection */
-#if   (TEST_TIMER == TIM_TIMER2)
-    SET_BIT(MRCC->APB1ENR, 0);   /* TIM2EN (APB1) */
-
-#elif (TEST_TIMER == TIM_TIMER3)
-    SET_BIT(MRCC->APB1ENR, 1);   /* TIM3EN (APB1) */
-
-#elif (TEST_TIMER == TIM_TIMER4)
-    SET_BIT(MRCC->APB1ENR, 2);   /* TIM4EN (APB1) */
-
-#elif (TEST_TIMER == TIM_TIMER5)
-    SET_BIT(MRCC->APB1ENR, 3);   /* TIM5EN (APB1) */
-
-#elif (TEST_TIMER == TIM_TIMER1)
-    SET_BIT(MRCC->APB2ENR, 0);   /* TIM1EN (APB2) */
-
-#elif (TEST_TIMER == TIM_TIMER8)
-    SET_BIT(MRCC->APB2ENR, 1);   /* TIM8EN (APB2) */
-#endif
+    /* Enable Ultrasonic ICU timer and separate Delay timer clocks */
+    App_vEnableTimerClock(US_ICU_TIMER);
+    App_vEnableTimerClock(US_DELAY_TIMER);
 }
 
 /*_______________________________________________________________________________*/
@@ -101,12 +107,16 @@ static void App_vEnableClocks(void)
 
 int main(void)
 {
+    /* Ensure ICU and Delay never share the same timer */
+    (void)sizeof(char[(US_ICU_TIMER != US_DELAY_TIMER) ? 1 : -1]);
+
     /* 1. Initialize Peripheral Clocks */
     App_vEnableClocks();
 
     /* 2. Configure and Initialize Ultrasonic Sensor */
     US_Config_t Sensor = {
-        .Timer    = TEST_TIMER,
+        .Timer    = US_ICU_TIMER,
+        .Channel  = US_ECHO_CHANNEL,
         .TrigPort = US_TRIG_PORT,
         .TrigPin  = US_TRIG_PIN,
         .EchoPort = US_ECHO_PORT,
@@ -114,7 +124,16 @@ int main(void)
     };
     US_vInit(&Sensor);
 
-    /* 3. Configure and Initialize Buzzer */
+    /* 3. Initialize Dedicated Delay Timer (1kHz tick at 16MHz HSI) */
+    TIM_Config_t DelayTimerCfg = {
+        .Timer           = US_DELAY_TIMER,
+        .Prescaler       = 16000U - 1U,
+        .AutoReloadValue = MEASURE_DELAY_MS,
+        .Mode            = TIM_COUNTERMODE_UP
+    };
+    TIM_vInit(&DelayTimerCfg);
+
+    /* 4. Configure and Initialize Buzzer */
     BUZ_Config_t Buzzer = {
         .Port        = BUZ_PORT,
         .Pin         = BUZ_PIN,
@@ -147,9 +166,9 @@ int main(void)
             /* No object detected within timeout range -> Ensure Buzzer is OFF */
             BUZ_Off(&Buzzer);
         }
-        
-        /* 60ms delay between triggers as recommended by HC-SR04 datasheet */
-        TIM_vDelayMs(TEST_TIMER, MEASURE_DELAY_MS);
+
+        /* 60ms delay between triggers on dedicated Basic Timer TIM7 */
+        TIM_vDelayMs(US_DELAY_TIMER, MEASURE_DELAY_MS);
     }
 
     return 0;

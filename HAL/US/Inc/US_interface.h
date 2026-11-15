@@ -34,6 +34,7 @@
  * @example
  *   US_Config_t mySensor = {
  *       .Timer    = TIM_TIMER2,
+ *       .Channel  = TIM_CHANNEL2,
  *       .TrigPort = GPIO_PORTA,
  *       .TrigPin  = GPIO_PIN0,
  *       .EchoPort = GPIO_PORTA,
@@ -64,7 +65,7 @@ typedef struct
  *          - RCC clock for GPIO port(s) and Timer must be enabled BEFORE calling this.
  *
  * @example
- *   US_Config_t sensor = {TIM_TIMER2, GPIO_PORTA, GPIO_PIN0, GPIO_PORTA, GPIO_PIN1};
+ *   US_Config_t sensor = {TIM_TIMER2, TIM_CHANNEL2, GPIO_PORTA, GPIO_PIN0, GPIO_PORTA, GPIO_PIN1};
  *   US_vInit(&sensor);
  */
 ErrorState_t US_vInit(const US_Config_t *pxSensor);
